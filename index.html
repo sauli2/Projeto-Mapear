@@ -1,0 +1,2635 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Projeto Mapear</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <!-- shapefile.js — lê .shp + .dbf diretamente no browser -->
+  <script src="https://unpkg.com/shapefile@0.6.6/dist/shapefile.min.js"></script>
+
+  <style>
+    /* ── Reset ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #ffffff;
+      --surface:      #f9fafb;
+      --surface2:     #f3f4f6;
+      --border:       #e5e7eb;
+      --border-dark:  #d1d5db;
+      --text:         #111827;
+      --muted:        #6b7280;
+      --rail-bg:      #1e3831;
+      --rail-hover:   #27493f;
+      --rail-active:  #2f594e;
+      --rail-text:    #b2c5bf;
+      --rail-text-act:#ffffff;
+      --accent:       #1e3831;
+      --accent-light: #e8f0ec;
+      --accent2:      #2d5248;
+      --danger:       #ef4444;
+      --warn:         #f59e0b;
+      --rail-w:       76px;
+      --drawer-w:     330px;
+      --radius:       8px;
+      --trans:        0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f3f4f6;
+      color: var(--text);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ───────────────────────────────────────────── */
+    #app {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+    }
+
+    #map {
+      position: absolute;
+      top: 0; bottom: 0; right: 0;
+      left: var(--rail-w);
+      width: calc(100vw - var(--rail-w));
+      transition: left var(--trans), width var(--trans);
+    }
+
+    /* ── Navigation Rail (OSPA Left Bar) ───────────────────── */
+    #rail {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: var(--rail-w);
+      background: var(--rail-bg);
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0 16px;
+      user-select: none;
+    }
+
+    .rail-top {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+    }
+
+    .rail-brand {
+      width: 44px; height: 44px;
+      background: #27473e;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: #ffffff;
+      cursor: pointer;
+      transition: background var(--trans);
+    }
+    .rail-brand:hover { background: #31584d; }
+    .rail-brand svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+
+    .rail-nav {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .rail-btn {
+      width: 66px;
+      padding: 10px 4px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--rail-text);
+      cursor: pointer;
+      transition: all var(--trans);
+      text-decoration: none;
+    }
+    .rail-btn svg {
+      width: 20px; height: 20px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .rail-btn span {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: -0.1px;
+      text-align: center;
+      line-height: 1.15;
+    }
+    .rail-btn:hover {
+      background: var(--rail-hover);
+      color: #ffffff;
+    }
+    .rail-btn.active {
+      background: var(--rail-active);
+      color: #ffffff;
+    }
+
+    .rail-bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-align: center;
+    }
+    .rail-logo {
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.1;
+    }
+    .rail-logo .brand-ospa {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .rail-logo .brand-place {
+      font-size: 10px;
+      font-weight: 400;
+      opacity: 0.85;
+    }
+    .rail-logo .brand-sub {
+      font-size: 8px;
+      color: var(--rail-text);
+      margin-top: 3px;
+      letter-spacing: 0.2px;
+    }
+
+    /* ── Slide-Out Drawer / Floating Panel ─────────────────── */
+    #drawer {
+      position: fixed;
+      top: 0; bottom: 0;
+      left: var(--rail-w);
+      width: var(--drawer-w);
+      background: #ffffff;
+      border-right: 1px solid var(--border);
+      box-shadow: 6px 0 24px rgba(0,0,0,0.06);
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      transition: transform var(--trans), opacity var(--trans);
+      transform: translateX(0);
+    }
+    #drawer.closed {
+      transform: translateX(-105%);
+      pointer-events: none;
+    }
+
+    .drawer-header {
+      padding: 16px 18px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.2px;
+    }
+    .drawer-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: background var(--trans), color var(--trans);
+    }
+    .drawer-close:hover {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    .drawer-close svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .drawer-tab {
+      display: none;
+    }
+    .drawer-tab.active {
+      display: block;
+    }
+
+    /* Section styling inside drawer */
+    .panel-section {
+      margin-bottom: 22px;
+    }
+    .panel-section-title {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* Minimalist Toggle Row */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 10px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background var(--trans);
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .toggle-row:hover { background: var(--surface); }
+    .toggle-row .label-wrap { display: flex; align-items: center; gap: 10px; }
+    .toggle-icon {
+      width: 26px; height: 26px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent);
+      background: var(--accent-light);
+      flex-shrink: 0;
+    }
+    .toggle-icon svg {
+      width: 14px; height: 14px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+    }
+    .toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text); }
+    .toggle-desc { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+
+    /* Switch Toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px; height: 20px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #e5e7eb;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background var(--trans);
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      transition: transform var(--trans);
+    }
+    .switch input:checked + .slider {
+      background: var(--accent);
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(16px);
+    }
+
+    /* Legends */
+    .legend-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .legend-gradient {
+      height: 6px;
+      width: 100%;
+      border-radius: 3px;
+      background: linear-gradient(to right, #f8f9fa, #e9ecef, #dee2e6, #ced4da);
+      margin-bottom: 4px;
+    }
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* Context Stats */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+    .stat-val {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent);
+      line-height: 1.2;
+    }
+    .stat-key {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Shapefile Drop / Cards ────────────────────────────── */
+    #drop-hint {
+      border: 1.5px dashed #cbd5e1;
+      border-radius: var(--radius);
+      padding: 16px 14px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 11.5px;
+      cursor: pointer;
+      background: var(--surface);
+      transition: all var(--trans);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    #drop-hint:hover, #drop-hint.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+    .drop-hint-btn {
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    .shape-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .shape-item-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .shape-item-info { flex: 1; min-width: 0; }
+    .shape-item-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+    .shape-item-meta {
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+    .shape-item-actions { display: flex; gap: 4px; }
+    .shape-btn {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 3px 7px;
+      cursor: pointer;
+      transition: all var(--trans);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .shape-btn:hover { background: var(--surface2); color: var(--text); }
+    .shape-btn.danger:hover { border-color: var(--danger); color: var(--danger); background: #fee2e2; }
+
+    /* Gradient & Opacity in Card */
+    .shape-extra {
+      width: 100%;
+      padding: 8px 0 2px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .shape-ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .shape-ctrl-label {
+      font-size: 10.5px;
+      color: var(--muted);
+      min-width: 55px;
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+    .shape-select {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 11px;
+      padding: 4px 6px;
+      outline: none;
+      cursor: pointer;
+      min-width: 0;
+      font-family: inherit;
+    }
+    .shape-select:focus { border-color: var(--accent); }
+
+    .shape-opacity-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .shape-opacity-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    .shape-opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .shape-opacity-slider::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+    }
+    .shape-opacity-val {
+      font-size: 10.5px;
+      color: var(--muted);
+      min-width: 28px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .shape-legend-bar {
+      height: 6px;
+      width: 100%;
+      border-radius: 3px;
+      margin-top: 6px;
+    }
+    .shape-legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9.5px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* ── Top Floating Bar ──────────────────────────────────── */
+    #topbar-left {
+      position: fixed;
+      top: 14px;
+      left: calc(var(--rail-w) + 16px);
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: all;
+    }
+
+    .top-pill-dark {
+      background: #111827;
+      color: #ffffff;
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      font-family: inherit;
+    }
+    .top-pill-dark svg { width: 12px; height: 12px; fill: currentColor; }
+
+    .search-box {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      width: 240px;
+    }
+    .search-box svg {
+      width: 14px; height: 14px;
+      stroke: var(--muted);
+      fill: none;
+      stroke-width: 2;
+    }
+    .search-box input {
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 12px;
+      color: var(--text);
+      font-family: inherit;
+      width: 100%;
+    }
+    .search-box input::placeholder { color: #9ca3af; }
+
+    .top-btn-accent {
+      background: var(--accent);
+      color: #ffffff;
+      border: none;
+      border-radius: 20px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: background var(--trans);
+      font-family: inherit;
+    }
+    .top-btn-accent:hover { background: #26473e; }
+    .top-btn-accent svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    .top-btn-icon {
+      background: var(--accent);
+      color: #ffffff;
+      border: none;
+      border-radius: 20px;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .top-btn-icon svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    #topbar-right {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: all;
+    }
+    .chip {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    /* ── Floating Map Controls (Bottom Right) ──────────────── */
+    #map-controls {
+      position: fixed;
+      bottom: 24px;
+      right: 16px;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .segmented-toggle {
+      display: flex;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .segmented-btn {
+      border: none;
+      background: transparent;
+      padding: 5px 12px;
+      border-radius: 16px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all var(--trans);
+      font-family: inherit;
+    }
+    .segmented-btn.active {
+      background: #111827;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .map-btn-group {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .map-tool-btn {
+      width: 34px; height: 34px;
+      border: none;
+      background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text);
+      cursor: pointer;
+      transition: background var(--trans);
+    }
+    .map-tool-btn:hover { background: var(--surface2); }
+    .map-tool-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .map-tool-btn + .map-tool-btn { border-top: 1px solid var(--border); }
+
+    /* ── Minimalist Toast ──────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 8px 18px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      z-index: 400;
+      opacity: 0;
+      transition: all var(--trans);
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    #toast::before {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* ── Minimalist Loading Overlay ────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+      gap: 16px;
+      transition: opacity 0.4s ease;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner-wrap { position: relative; width: 44px; height: 44px; }
+    .spinner-ring {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      border: 2.5px solid #e5e7eb;
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-title { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
+    .loading-sub   { font-size: 12px; color: var(--muted); }
+
+    /* ── Popups ────────────────────────────────────────────── */
+    .mapboxgl-popup-content {
+      background: #ffffff !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 8px !important;
+      padding: 12px 14px !important;
+      color: var(--text) !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+      font-family: 'Inter', sans-serif !important;
+      min-width: 170px;
+    }
+    .mapboxgl-popup-tip { display: none !important; }
+    .mapboxgl-popup-close-button {
+      color: var(--muted) !important;
+      font-size: 14px !important;
+      top: 6px !important;
+      right: 8px !important;
+    }
+    .popup-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--accent);
+    }
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+    .popup-row strong { color: var(--text); }
+
+    /* ── Drag & Drop Overlay ───────────────────────────────── */
+    #drop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: rgba(30, 56, 49, 0.08);
+      border: 2px dashed var(--accent);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    #drop-overlay.visible { opacity: 1; }
+    #drop-overlay .drop-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    #drop-overlay .drop-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ── Loading overlay ──────────────────────────────────────── -->
+<div id="loading">
+  <div class="spinner-wrap">
+    <div class="spinner-ring"></div>
+  </div>
+  <div class="loading-title">Projeto Mapear</div>
+  <div class="loading-sub" id="loading-msg">Carregando mapa…</div>
+</div>
+
+<!-- ── Navigation Rail (Barra Esquerda) ─────────────────── -->
+<nav id="rail">
+  <div class="rail-top">
+    <div class="rail-brand" title="Projeto Mapear">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+    </div>
+    <div class="rail-nav">
+      <button class="rail-btn active" data-tab="layers" title="Camadas do mapa">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        <span>Camadas</span>
+      </button>
+      <button class="rail-btn" data-tab="shapes" title="Importar shapefiles e dados">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        <span>Dados & Shapes</span>
+      </button>
+      <button class="rail-btn" data-tab="filters" title="Filtros">
+        <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+        <span>Filtros</span>
+      </button>
+      <button class="rail-btn" data-tab="context" title="Contexto">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        <span>Contexto</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="rail-bottom">
+    <div class="rail-logo">
+      <span class="brand-ospa">PROJETO</span>
+      <span class="brand-place">MAPEAR</span>
+      <span class="brand-sub">plataforma espacial</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Slide-Out Drawer / Floating Panel ─────────────────────── -->
+<aside id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawer-title">Camadas do Mapa</div>
+    <button class="drawer-close" id="btn-close-drawer" title="Fechar painel">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+
+  <div class="drawer-body">
+
+    <!-- Tab: Camadas -->
+    <div class="drawer-tab active" id="tab-layers">
+      <div class="panel-section">
+        <div class="panel-section-title">Camadas Base</div>
+
+        <label class="toggle-row">
+          <div class="label-wrap">
+            <div class="toggle-icon">
+              <svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="9" y1="22" x2="9" y2="22.01"></line><line x1="15" y1="22" x2="15" y2="22.01"></line><line x1="9" y1="18" x2="9" y2="18.01"></line><line x1="15" y1="18" x2="15" y2="18.01"></line><line x1="9" y1="14" x2="9" y2="14.01"></line><line x1="15" y1="14" x2="15" y2="14.01"></line><line x1="9" y1="10" x2="9" y2="10.01"></line><line x1="15" y1="10" x2="15" y2="10.01"></line><line x1="9" y1="6" x2="9" y2="6.01"></line><line x1="15" y1="6" x2="15" y2="6.01"></line></svg>
+            </div>
+            <div>
+              <div class="toggle-label">Edificações 3D</div>
+              <div class="toggle-desc">Extrusão volumétrica OSM</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chk-buildings" checked>
+            <span class="slider"></span>
+          </label>
+        </label>
+
+        <label class="toggle-row">
+          <div class="label-wrap">
+            <div class="toggle-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 22v-7l-2-2"></path><path d="M17 8a5 5 0 0 0-10 0c0 4 5 7 5 7s5-3 5-7z"></path></svg>
+            </div>
+            <div>
+              <div class="toggle-label">Áreas Verdes</div>
+              <div class="toggle-desc">Parques, praças e vegetação</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chk-green" checked>
+            <span class="slider"></span>
+          </label>
+        </label>
+
+        <label class="toggle-row">
+          <div class="label-wrap">
+            <div class="toggle-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+            </div>
+            <div>
+              <div class="toggle-label">Corpos d'Água</div>
+              <div class="toggle-desc">Rios, lagos e orla marítima</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chk-water" checked>
+            <span class="slider"></span>
+          </label>
+        </label>
+
+        <label class="toggle-row">
+          <div class="label-wrap">
+            <div class="toggle-icon">
+              <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            </div>
+            <div>
+              <div class="toggle-label">Modo Perspectiva 3D</div>
+              <div class="toggle-desc">Inclinação de câmera e ângulo</div>
+            </div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chk-3d" checked>
+            <span class="slider"></span>
+          </label>
+        </label>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-section-title">Gabarito das Edificações</div>
+        <div class="legend-gradient"></div>
+        <div class="legend-labels">
+          <span>0 m</span><span>50 m</span><span>100 m</span><span>150+ m</span>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-section-title">Classificação Base</div>
+        <div class="legend-grid">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#c4e6c3"></div>
+            <span>Parques e reservas</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#d8edd6"></div>
+            <span>Praças e jardins</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#b0d3e5"></div>
+            <span>Recursos hídricos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Shapes & Dados -->
+    <div class="drawer-tab" id="tab-shapes">
+      <div class="panel-section">
+        <div class="panel-section-title">Importar Arquivos</div>
+        <div id="drop-hint" title="Clique para escolher arquivos ou arraste para cá">
+          <div>Arraste arquivos ou <span class="drop-hint-btn">clique aqui</span></div>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">.shp (+.dbf, .prj), .gpkg, .geojson, .zip</div>
+          <input type="file" id="file-input" multiple accept=".shp,.dbf,.prj,.gpkg,.geojson,.json,.zip" style="display:none">
+        </div>
+
+        <div class="panel-section-title" style="margin-top:16px;">Camadas Carregadas</div>
+        <div id="shapes-list">
+          <!-- Inserido dinamicamente via JS -->
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Tab: Filtros -->
+    <div class="drawer-tab" id="tab-filters">
+      <div class="panel-section">
+        <div class="panel-section-title">Filtros de Visualização</div>
+        <p style="font-size:12px;color:var(--muted);line-height:1.5;">
+          Ajuste os parâmetros para filtrar feições por área, altura ou atributos tabulares específicos.
+        </p>
+      </div>
+    </div>
+
+    <!-- Tab: Contexto -->
+    <div class="drawer-tab" id="tab-context">
+      <div class="panel-section">
+        <div class="panel-section-title">Métricas de Navegação</div>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-val" id="stat-zoom">15</div>
+            <div class="stat-key">Zoom</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="stat-pitch">60°</div>
+            <div class="stat-key">Inclinação</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="stat-bearing">-20°</div>
+            <div class="stat-key">Direção</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="stat-center">-3.73</div>
+            <div class="stat-key">Latitude</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</aside>
+
+<!-- ── Top Floating Bar ──────────────────────────────────────── -->
+<div id="topbar-left">
+  <button class="top-pill-dark" id="city-pill">
+    <span>Fortaleza, CE</span>
+    <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"></path></svg>
+  </button>
+  <div class="search-box">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    <input type="text" placeholder="Digite um endereço ou local…">
+  </div>
+</div>
+
+<div id="topbar-right">
+  <div class="chip" id="chip-mode">Modo 3D</div>
+</div>
+
+<!-- ── Map Container ─────────────────────────────────────────── -->
+<div id="app">
+  <div id="map"></div>
+</div>
+
+<!-- ── Floating Map Controls (Bottom Right OSPA) ─────────────── -->
+<div id="map-controls">
+  <div class="segmented-toggle">
+    <button class="segmented-btn" id="btn-toggle-2d">2D</button>
+    <button class="segmented-btn active" id="btn-toggle-3d">3D</button>
+  </div>
+  <div class="map-btn-group">
+    <button class="map-tool-btn" id="btn-zoom-in" title="Aproximar">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+    <button class="map-tool-btn" id="btn-zoom-out" title="Afastar">
+      <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+    <button class="map-tool-btn" id="btn-reset-pitch" title="Resetar orientação">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 19 21 12 17 5 21 12 2"></polygon></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ── Overlay de drag-and-drop (cobre o mapa inteiro) ───────── -->
+<div id="drop-overlay">
+  <div class="drop-title">Solte os arquivos para importar</div>
+  <div class="drop-sub">.shp (+ .dbf, .prj) · .gpkg · .geojson · .zip</div>
+</div>
+
+<!-- ── Toast de feedback ──────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+  // ── Token ofuscado (XOR cipher) ─────────────────────────────────
+  // ⚠️  Isso é ofuscação, não criptografia.
+  //     Para produção: use backend proxy que injete o token.
+  //     Para reutilizar com outro token: rode `node generate-token.js <token>`
+  const _k=[77,33,110,49,48,83,80,65,95,50,54,64,99,101];
+  const _d=[61,74,64,84,73,25,97,8,53,93,95,35,81,35,124,67,41,8,93,50,24,42,54,126,117,10,11,44,39,78,7,104,2,98,99,12,50,116,65,35,52,9,60,108,42,116,4,29,58,12,110,81,126,40,17,1,21,74,94,84,94,56,100,37,12,120,15,110,7,85,37,18,8,83,84,10,18,32,10,86,71,34,54,15,24,98,42,71,81,52];
+  const _t=_d.map((c,i)=>String.fromCharCode(c^_k[i%_k.length])).join("");
+  mapboxgl.accessToken = _t;
+
+  // ── IDs das camadas gerenciadas ─────────────────────────────────
+  // Preenchido dinamicamente após o mapa carregar
+  let _waterLayerIds = [];
+  let _greenLoaded   = false;
+
+  // ── Configuração central ────────────────────────────────────────
+  const CONFIG = {
+    center:    [-38.5267, -3.7319],
+    zoom:      15,
+    minZoom:   12,
+    maxZoom:   20,
+    pitch:     60,
+    bearing:   -20,
+    style:     "mapbox://styles/mapbox/light-v11",
+    maxBounds: [[-38.72, -3.90], [-38.30, -3.55]]
+  };
+
+  // ── Detecta GPU fraca ───────────────────────────────────────────
+  const _cv = document.createElement("canvas");
+  const _gl = _cv.getContext("webgl") || _cv.getContext("experimental-webgl");
+  const _ext = _gl ? (_gl.getExtension("WEBGL_debug_renderer_info") || {}) : {};
+  const _gpu = _ext.UNMASKED_RENDERER_WEBGL ? _gl.getParameter(_ext.UNMASKED_RENDERER_WEBGL) : "";
+  const isWeakGPU = /intel|llvm|swiftshader|software/i.test(_gpu);
+
+  // ── Mapa ────────────────────────────────────────────────────────
+  const map = new mapboxgl.Map({
+    container: "map",
+    style:     CONFIG.style,
+    center:    CONFIG.center,
+    zoom:      CONFIG.zoom,
+    minZoom:   CONFIG.minZoom,
+    maxZoom:   CONFIG.maxZoom,
+    pitch:     CONFIG.pitch,
+    bearing:   CONFIG.bearing,
+    maxBounds: CONFIG.maxBounds,
+    antialias: !isWeakGPU
+  });
+
+  // ── Controles de Escala ─────────────────────────────────────────
+  map.addControl(new mapboxgl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+  // ── Error handling ──────────────────────────────────────────────
+  map.on("error", e => console.error("[Mapbox]", e.error));
+
+  // ── Busca áreas verdes da Overpass API (GeoJSON real do OSM) ───
+  async function fetchGreenAreas() {
+    const bbox = "-3.90,-38.72,-3.55,-38.30";
+    const q = `[out:json][timeout:30];
+(
+  way["leisure"~"^(park|garden|playground|recreation_ground)$"](${bbox});
+  way["landuse"~"^(park|forest|grass|recreation_ground|village_green)$"](${bbox});
+  way["natural"~"^(wood|scrub|grassland|meadow)$"](${bbox});
+);
+out geom;`;
+
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    "data=" + encodeURIComponent(q)
+    });
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const osm = await res.json();
+
+    const features = (osm.elements || [])
+      .filter(el => el.type === "way" && Array.isArray(el.geometry) && el.geometry.length >= 3)
+      .map(el => {
+        const coords = el.geometry.map(pt => [pt.lon, pt.lat]);
+        const first = coords[0], last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+        return {
+          type: "Feature",
+          geometry: { type: "Polygon", coordinates: [coords] },
+          properties: {
+            name: el.tags?.name || "Área verde",
+            type: el.tags?.leisure || el.tags?.landuse || el.tags?.natural || "green"
+          }
+        };
+      });
+
+    return { type: "FeatureCollection", features };
+  }
+
+  // ── Atualiza mensagem de loading ────────────────────────────────
+  function setLoadingMsg(msg) {
+    const el = document.getElementById("loading-msg");
+    if (el) el.textContent = msg;
+  }
+
+  // ── Inicialização assíncrona das camadas ────────────────────────
+  async function initLayers() {
+
+    // ── 1. Detecta camadas de água existentes no estilo light-v11 ──
+    _waterLayerIds = map.getStyle().layers
+      .filter(l => {
+        const id = l.id.toLowerCase();
+        return id === "water"
+          || id.startsWith("water-")
+          || id === "waterway"
+          || id.startsWith("waterway-");
+      })
+      .map(l => l.id);
+
+    // Aplica tom suave de água (estilo OSPA / arquitetônico)
+    _waterLayerIds.forEach(id => {
+      const layer = map.getStyle().layers.find(l => l.id === id);
+      if (!layer) return;
+      try {
+        if (layer.type === "fill") {
+          map.setPaintProperty(id, "fill-color",   "#b0d3e5");
+          map.setPaintProperty(id, "fill-opacity",  0.90);
+        } else if (layer.type === "line") {
+          map.setPaintProperty(id, "line-color",   "#8cbcd3");
+          map.setPaintProperty(id, "line-opacity",  0.90);
+        }
+      } catch (e) {
+        console.warn(`[water] Não foi possível estilizar camada "${id}":`, e.message);
+      }
+    });
+
+    // ── 2. Prédios 3D (fonte composite — volumetria arquitetônica limpa) ─
+    map.addLayer({
+      id: "3d-buildings",
+      source: "composite",
+      "source-layer": "building",
+      filter: ["==", "extrude", "true"],
+      type: "fill-extrusion",
+      minzoom: 14,
+      paint: {
+        "fill-extrusion-color": [
+          "interpolate", ["linear"],
+          ["coalesce", ["get", "height"], 0],
+          0,   "#f4f5f7",
+          30,  "#e6e8eb",
+          80,  "#d8dbe0",
+          150, "#c4c8d0"
+        ],
+        "fill-extrusion-height": [
+          "interpolate", ["linear"], ["zoom"],
+          14, 0,
+          15, ["coalesce", ["get", "height"], ["get", "render_height"], 10]
+        ],
+        "fill-extrusion-base": [
+          "interpolate", ["linear"], ["zoom"],
+          14, 0,
+          15, ["coalesce", ["get", "min_height"], 0]
+        ],
+        "fill-extrusion-opacity": 0.92,
+        "fill-extrusion-ambient-occlusion-intensity": 0.35,
+        "fill-extrusion-ambient-occlusion-radius": 3
+      }
+    });
+
+    // Popup prédios (limpo, sem emojis)
+    map.on("click", "3d-buildings", e => {
+      const p      = e.features[0].properties;
+      const height = p.height ? `${Math.round(p.height)} m` : "desconhecida";
+      const floors = p.levels || p["building:levels"] || "—";
+      const type   = p.type   || p.building           || "—";
+      new mapboxgl.Popup({ offset: [0, -10], closeButton: true })
+        .setLngLat(e.lngLat)
+        .setHTML(`
+          <div class="popup-title">Edificação</div>
+          <div class="popup-row"><span>Altura</span><strong>${height}</strong></div>
+          <div class="popup-row"><span>Pavimentos</span><strong>${floors}</strong></div>
+          <div class="popup-row"><span>Uso / Tipo</span><strong>${type}</strong></div>
+        `)
+        .addTo(map);
+    });
+    map.on("mouseenter", "3d-buildings", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "3d-buildings", () => { map.getCanvas().style.cursor = ""; });
+
+    // ── 3. Áreas verdes via Overpass API ──────────────────────────
+    setLoadingMsg("Buscando áreas verdes (OpenStreetMap)…");
+
+    try {
+      const geojson = await fetchGreenAreas();
+      map.addSource("osm-green", { type: "geojson", data: geojson });
+
+      // Preenchimento com tons verdes suaves
+      map.addLayer({
+        id: "osm-green-fill",
+        type: "fill",
+        source: "osm-green",
+        paint: {
+          "fill-color": [
+            "match", ["get", "type"],
+            "park",               "#c4e6c3",
+            "forest",             "#aedbb1",
+            "wood",               "#aedbb1",
+            "garden",             "#cce9cb",
+            "playground",         "#dcf0db",
+            "recreation_ground",  "#cce9cb",
+            "village_green",      "#d8edd6",
+            "grass",              "#dcf0db",
+            "scrub",              "#bedebd",
+            "grassland",          "#dcf0db",
+            "meadow",             "#d8edd6",
+            "#c4e6c3"
+          ],
+          "fill-opacity": 0.70
+        }
+      });
+
+      // Contorno suave
+      map.addLayer({
+        id: "osm-green-outline",
+        type: "line",
+        source: "osm-green",
+        paint: {
+          "line-color": "#97cb99",
+          "line-width":  1.2,
+          "line-opacity": 0.75
+        }
+      });
+
+      // Popup de áreas verdes (limpo)
+      const labels = {
+        park: "Parque", forest: "Floresta", wood: "Mata",
+        garden: "Jardim", playground: "Playground",
+        recreation_ground: "Área de lazer", village_green: "Praça",
+        grass: "Gramado", scrub: "Vegetação baixa",
+        grassland: "Campo", meadow: "Prado"
+      };
+      map.on("click", "osm-green-fill", e => {
+        const p    = e.features[0].properties;
+        const name = p.name || "Área verde";
+        const type = p.type || "—";
+        new mapboxgl.Popup({ offset: [0, -10], closeButton: true })
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div class="popup-title">${name}</div>
+            <div class="popup-row"><span>Categoria</span><strong>${labels[type] || type}</strong></div>
+          `)
+          .addTo(map);
+      });
+      map.on("mouseenter", "osm-green-fill", () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "osm-green-fill", () => { map.getCanvas().style.cursor = ""; });
+
+      _greenLoaded = true;
+
+    } catch (err) {
+      console.warn("[OSM] Áreas verdes indisponíveis:", err.message);
+      const chk = document.getElementById("chk-green");
+      if (chk) { chk.disabled = true; chk.parentElement.style.opacity = "0.4"; }
+    }
+
+    // ── Remove loading ───────────────────────────────────────────
+    const el = document.getElementById("loading");
+    if (el) {
+      el.classList.add("hidden");
+      setTimeout(() => el.remove(), 600);
+    }
+  }
+
+  // ── Camadas — ponto de entrada ──────────────────────────────────
+  map.on("load", () => {
+    initLayers().catch(err => {
+      console.error("[initLayers]", err);
+      const el = document.getElementById("loading");
+      if (el) { el.classList.add("hidden"); setTimeout(() => el.remove(), 600); }
+    });
+  });
+
+  // ── Atualiza stats em tempo real ────────────────────────────────
+  function updateStats() {
+    const zoomEl = document.getElementById("stat-zoom");
+    const pitchEl = document.getElementById("stat-pitch");
+    const bearingEl = document.getElementById("stat-bearing");
+    const centerEl = document.getElementById("stat-center");
+    if (zoomEl) zoomEl.textContent = map.getZoom().toFixed(1);
+    if (pitchEl) pitchEl.textContent = Math.round(map.getPitch()) + "°";
+    if (bearingEl) bearingEl.textContent = Math.round(map.getBearing()) + "°";
+    if (centerEl) centerEl.textContent = map.getCenter().lat.toFixed(4);
+  }
+  map.on("move", updateStats);
+
+  // ── Navegação da Barra Esquerda (Rail) & Drawer ──────────────────
+  const railBtns = document.querySelectorAll(".rail-btn");
+  const drawer = document.getElementById("drawer");
+  const drawerTitle = document.getElementById("drawer-title");
+  const btnCloseDrawer = document.getElementById("btn-close-drawer");
+  const tabTitles = {
+    layers: "Camadas do Mapa",
+    shapes: "Importar Dados & Shapes",
+    filters: "Filtros Urbanos",
+    context: "Contexto Urbano"
+  };
+
+  let activeTab = "layers";
+
+  function openTab(tabId) {
+    if (activeTab === tabId && !drawer.classList.contains("closed")) {
+      drawer.classList.add("closed");
+      railBtns.forEach(b => b.classList.remove("active"));
+      return;
+    }
+    activeTab = tabId;
+    drawer.classList.remove("closed");
+    if (drawerTitle) drawerTitle.textContent = tabTitles[tabId] || "Painel";
+    railBtns.forEach(b => {
+      b.classList.toggle("active", b.dataset.tab === tabId);
+    });
+    document.querySelectorAll(".drawer-tab").forEach(tab => {
+      tab.classList.toggle("active", tab.id === "tab-" + tabId);
+    });
+  }
+
+  railBtns.forEach(btn => {
+    btn.addEventListener("click", () => openTab(btn.dataset.tab));
+  });
+
+  if (btnCloseDrawer) {
+    btnCloseDrawer.addEventListener("click", () => {
+      drawer.classList.add("closed");
+      railBtns.forEach(b => b.classList.remove("active"));
+    });
+  }
+
+  // ── Toggles de camadas ──────────────────────────────────────────
+  function layerVisible(ids, visible) {
+    ids.forEach(id => {
+      if (map.getLayer(id))
+        map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    });
+  }
+
+  document.getElementById("chk-buildings")?.addEventListener("change", e => {
+    layerVisible(["3d-buildings"], e.target.checked);
+  });
+
+  document.getElementById("chk-green")?.addEventListener("change", e => {
+    if (!_greenLoaded) return;
+    layerVisible(["osm-green-fill", "osm-green-outline"], e.target.checked);
+  });
+
+  document.getElementById("chk-water")?.addEventListener("change", e => {
+    layerVisible(_waterLayerIds, e.target.checked);
+  });
+
+  // ── Controles 2D / 3D ────────────────────────────────────────────
+  const btn2D = document.getElementById("btn-toggle-2d");
+  const btn3D = document.getElementById("btn-toggle-3d");
+  const chk3D = document.getElementById("chk-3d");
+
+  function set3DMode(is3D) {
+    map.easeTo({
+      pitch:    is3D ? CONFIG.pitch   : 0,
+      bearing:  is3D ? CONFIG.bearing : 0,
+      duration: 700
+    });
+    if (chk3D) chk3D.checked = is3D;
+    if (btn2D && btn3D) {
+      btn2D.classList.toggle("active", !is3D);
+      btn3D.classList.toggle("active", is3D);
+    }
+    const chip = document.getElementById("chip-mode");
+    if (chip) chip.textContent = is3D ? "Modo 3D" : "Modo 2D";
+  }
+
+  if (btn2D) btn2D.addEventListener("click", () => set3DMode(false));
+  if (btn3D) btn3D.addEventListener("click", () => set3DMode(true));
+  if (chk3D) chk3D.addEventListener("change", e => set3DMode(e.target.checked));
+
+  // Controles de zoom & orientação flutuantes (OSPA)
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => map.zoomIn());
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => map.zoomOut());
+  document.getElementById("btn-reset-pitch")?.addEventListener("click", () => map.resetNorthPitch());
+
+  // ═══════════════════════════════════════════════════════════════
+  // ── MOTOR DE IMPORTAÇÃO GEOESPACIAL (.shp, .gpkg, .geojson, .zip)
+  // ═══════════════════════════════════════════════════════════════
+
+  const SHAPE_COLORS = [
+    "#1e3831", "#2d5248", "#3b6e61", "#4f8a7a",
+    "#0077b6", "#2a9d8f", "#e76f51", "#7209b7",
+    "#4361ee", "#d97706", "#dc2626", "#059669"
+  ];
+  let shapeCounter = 0;
+  const loadedShapes = {}; // id -> { name, color, layerIds, sourceId, visible, numericCols, geojson }
+
+  // ── Paletas de gradiente cartográfico (limpas, sem emojis) ───────
+  const PALETTES = {
+    calor:    { label: "Calor / Densidade",      stops: ["#06d6a0","#ffd166","#ef476f"] },
+    viridis:  { label: "Viridis (Perceptual)",   stops: ["#440154","#21918c","#fde725"] },
+    magma:    { label: "Magma (Térmico)",        stops: ["#180f3d","#b73779","#fcfdbf"] },
+    oceano:   { label: "Oceano (Azul)",          stops: ["#caf0f8","#0077b6","#03045e"] },
+    verde:    { label: "Vegetação (Verde)",      stops: ["#d8f3dc","#2d6a4f","#081c15"] },
+    espectral:{ label: "Espectral (Divergente)", stops: ["#2b83ba","#ffffbf","#d7191c"] },
+    neon:     { label: "Contraste (Alto)",       stops: ["#f72585","#7209b7","#4361ee"] }
+  };
+
+  // ── Toast de feedback ──────────────────────────────────────────
+  let _toastTimer = null;
+  function showToast(msg, duration = 3800) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.innerHTML = msg;
+    el.classList.add("show");
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove("show"), duration);
+  }
+
+  // ── Lazy-loaders de bibliotecas ────────────────────────────────
+  let _sqlJsPromise = null;
+  function getSqlJs() {
+    if (_sqlJsPromise) return _sqlJsPromise;
+    _sqlJsPromise = new Promise((resolve, reject) => {
+      if (window.initSqlJs) { resolve(window.initSqlJs); return; }
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js";
+      s.onload  = () => resolve(window.initSqlJs);
+      s.onerror = () => reject(new Error("Falha ao carregar sql.js"));
+      document.head.appendChild(s);
+    }).then(fn => fn({
+      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+    }));
+    return _sqlJsPromise;
+  }
+
+  let _proj4Promise = null;
+  function getProj4() {
+    if (window.proj4) return Promise.resolve(window.proj4);
+    if (_proj4Promise) return _proj4Promise;
+    _proj4Promise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js";
+      s.onload  = () => resolve(window.proj4);
+      s.onerror = () => reject(new Error("Falha ao carregar proj4js"));
+      document.head.appendChild(s);
+    });
+    return _proj4Promise;
+  }
+
+  let _jszipPromise = null;
+  function getJSZip() {
+    if (window.JSZip) return Promise.resolve(window.JSZip);
+    if (_jszipPromise) return _jszipPromise;
+    _jszipPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload  = () => resolve(window.JSZip);
+      s.onerror = () => reject(new Error("Falha ao carregar JSZip"));
+      document.head.appendChild(s);
+    });
+    return _jszipPromise;
+  }
+
+  // ── Reprojeção & Detecção de Projeção ───────────────────────────
+  const GEOGRAPHIC_CODES = new Set([4326, 4674, 4269, 4166, 0, -1]);
+
+  function getUtmProj4String(epsg) {
+    const code = Number(epsg);
+    if (isNaN(code)) return null;
+    // SIRGAS 2000 UTM Sul (31975 a 31985 -> Zonas 15S a 25S)
+    if (code >= 31975 && code <= 31985) {
+      const z = code - 31960;
+      return `+proj=utm +zone=${z} +south +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`;
+    }
+    // SIRGAS 2000 UTM Norte (31968 a 31974 -> Zonas 18N a 24N)
+    if (code >= 31968 && code <= 31974) {
+      const z = code - 31950;
+      return `+proj=utm +zone=${z} +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`;
+    }
+    // WGS 84 UTM Sul (32701 a 32760 -> Zonas 1S a 60S)
+    if (code >= 32701 && code <= 32760) {
+      const z = code - 32700;
+      return `+proj=utm +zone=${z} +south +datum=WGS84 +units=m +no_defs`;
+    }
+    // WGS 84 UTM Norte (32601 a 32660 -> Zonas 1N a 60N)
+    if (code >= 32601 && code <= 32660) {
+      const z = code - 32600;
+      return `+proj=utm +zone=${z} +datum=WGS84 +units=m +no_defs`;
+    }
+    // SAD69 UTM Sul (29188 a 29195 -> Zonas 18S a 25S)
+    if (code >= 29188 && code <= 29195) {
+      const z = code - 29170;
+      return `+proj=utm +zone=${z} +south +ellps=aust_SA +towgs84=-67.35,3.88,-38.22,0,0,0,0 +units=m +no_defs`;
+    }
+    // Web Mercator
+    if (code === 3857 || code === 900913 || code === 102100) {
+      return "+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs";
+    }
+    return null;
+  }
+
+  async function resolveTransformer(srsId, wktDef) {
+    if (srsId != null && GEOGRAPHIC_CODES.has(Number(srsId))) {
+      return null; // Já está em coordenadas geográficas WGS84 / SIRGAS 2000
+    }
+
+    await getProj4();
+
+    // 1. Tenta a fórmula UTM direta pelo código EPSG
+    if (srsId) {
+      const utmStr = getUtmProj4String(srsId);
+      if (utmStr) {
+        const key = `EPSG:${srsId}`;
+        proj4.defs(key, utmStr);
+        return { transform: proj4(key, "EPSG:4326"), name: key };
+      }
+    }
+
+    // 2. Se houver definição WKT (OGC WKT1 ou ESRI WKT)
+    if (wktDef && typeof wktDef === "string" && wktDef.trim().length > 10) {
+      try {
+        const customKey = `WKT_${Date.now()}`;
+        proj4.defs(customKey, wktDef);
+        const testPt = proj4(customKey, "EPSG:4326", [500000, 9500000]);
+        if (!isNaN(testPt[0]) && !isNaN(testPt[1])) {
+          return { transform: proj4(customKey, "EPSG:4326"), name: "WKT" };
+        }
+      } catch (_) {}
+
+      // Tenta extrair código EPSG do WKT
+      const epsgMatch = wktDef.match(/(?:EPSG|AUTHORITY)[\s,]+(?:\"EPSG\"[\s,]+)?[\"']?(\d{4,6})[\"']?/i);
+      if (epsgMatch && epsgMatch[1]) {
+        const extractedCode = epsgMatch[1];
+        const utmStr = getUtmProj4String(extractedCode);
+        if (utmStr) {
+          const key = `EPSG:${extractedCode}`;
+          proj4.defs(key, utmStr);
+          return { transform: proj4(key, "EPSG:4326"), name: key };
+        }
+      }
+
+      // Tenta extrair parâmetros UTM do texto
+      const utmMatch = wktDef.match(/(?:UTM[\s_]+(?:zone[\s_]+)?(\d{1,2})[\s_]*([NSns])?|central_meridian[\",\s]+(-?\d{1,3}))/i);
+      if (utmMatch) {
+        let zone = utmMatch[1] ? Number(utmMatch[1]) : null;
+        if (!zone && utmMatch[3]) {
+          const cm = Number(utmMatch[3]);
+          zone = Math.floor((cm + 180) / 6) + 1;
+        }
+        const isSouth = !utmMatch[2] || utmMatch[2].toUpperCase() === "S" || /10000000/i.test(wktDef);
+        if (zone) {
+          const utmStr = `+proj=utm +zone=${zone} ${isSouth ? "+south " : ""}+ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`;
+          const key = `UTM_${zone}${isSouth ? "S" : "N"}`;
+          proj4.defs(key, utmStr);
+          return { transform: proj4(key, "EPSG:4326"), name: key };
+        }
+      }
+    }
+
+    // 3. Fallback online para códigos desconhecidos via epsg.io
+    if (srsId && Number(srsId) > 1000) {
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 3500);
+        const res = await fetch(`https://epsg.io/${srsId}.proj4`, { signal: ctrl.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const projText = (await res.text()).trim();
+          if (projText.startsWith("+proj")) {
+            const key = `EPSG:${srsId}`;
+            proj4.defs(key, projText);
+            return { transform: proj4(key, "EPSG:4326"), name: key };
+          }
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  // Converte [x, y] garantindo formato GeoJSON [longitude, latitude]
+  function transformCoord(coord, transformer) {
+    if (!coord || typeof coord[0] !== "number" || typeof coord[1] !== "number") return coord;
+    let [x, y] = coord;
+
+    // Aplica transformer proj4 se fornecido
+    if (transformer) {
+      try {
+        const res = transformer.forward([x, y]);
+        if (!isNaN(res[0]) && !isNaN(res[1])) {
+          x = res[0];
+          y = res[1];
+        }
+      } catch (_) {}
+    }
+
+    // Heurística de inversão Lat/Lon comum em dados do Brasil / Américas:
+    // Se longitude estiver entre -35 e +35 (latitude do Brasil) e latitude estiver entre -75 e -34 (longitude do Brasil):
+    if (Math.abs(x) < 35 && y >= -75 && y <= -34) {
+      return [y, x];
+    }
+
+    return [x, y];
+  }
+
+  function reprojectGeometry(geom, transformer) {
+    if (!geom) return null;
+    const tc  = c => transformCoord(c, transformer);
+    const tcL = cs => cs.map(tc);
+
+    switch (geom.type) {
+      case "Point":
+        return { ...geom, coordinates: tc(geom.coordinates) };
+      case "MultiPoint":
+      case "LineString":
+        return { ...geom, coordinates: geom.coordinates.map(tc) };
+      case "Polygon":
+      case "MultiLineString":
+        return { ...geom, coordinates: geom.coordinates.map(tcL) };
+      case "MultiPolygon":
+        return { ...geom, coordinates: geom.coordinates.map(r => r.map(tcL)) };
+      case "GeometryCollection":
+        return {
+          ...geom,
+          geometries: (geom.geometries || []).map(g => reprojectGeometry(g, transformer)).filter(Boolean)
+        };
+      default:
+        return geom;
+    }
+  }
+
+  // ── WKB Reader (2D, 3D, 4D, ISO WKB e EWKB) ────────────────────
+  class WKBReader {
+    constructor(data) {
+      if (data instanceof ArrayBuffer) {
+        this.buf = data;
+      } else if (ArrayBuffer.isView(data)) {
+        // slice() garante cópia com byteOffset=0 eliminando bugs de view
+        this.buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      } else {
+        throw new TypeError("WKBReader: dados inválidos");
+      }
+      this.dv  = new DataView(this.buf);
+      this.pos = 0;
+      this.le  = true;
+    }
+
+    readByte()   { return this.dv.getUint8(this.pos++); }
+    readUint32() { const v = this.dv.getUint32(this.pos, this.le); this.pos += 4; return v; }
+    readInt32()  { const v = this.dv.getInt32(this.pos, this.le);  this.pos += 4; return v; }
+    readDouble() { const v = this.dv.getFloat64(this.pos, this.le); this.pos += 8; return v; }
+
+    readXY(hasZ, hasM) {
+      const x = this.readDouble(), y = this.readDouble();
+      if (hasZ) this.readDouble(); // descarta Z
+      if (hasM) this.readDouble(); // descarta M
+      return [x, y];
+    }
+
+    readRing(hasZ, hasM) {
+      const n = this.readUint32();
+      const r = [];
+      for (let i = 0; i < n; i++) r.push(this.readXY(hasZ, hasM));
+      // Garante anel linear fechado com pelo menos 4 coordenadas (regra GeoJSON / Mapbox)
+      if (r.length >= 3) {
+        const first = r[0], last = r[r.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          r.push([first[0], first[1]]);
+        }
+      }
+      return r;
+    }
+
+    readGeometry() {
+      if (this.pos >= this.dv.byteLength) return null;
+      this.le = this.readByte() === 1;
+      const raw = this.readUint32();
+
+      let base, hasZ = false, hasM = false;
+      if (raw > 1000 && raw < 4008) {
+        // ISO WKB (1001-1007 = Z, 2001-2007 = M, 3001-3007 = ZM)
+        base = raw % 1000;
+        const dim = Math.floor(raw / 1000);
+        hasZ = dim === 1 || dim === 3;
+        hasM = dim === 2 || dim === 3;
+      } else {
+        // EWKB (PostGIS)
+        base = raw & 0x0FFFFFFF;
+        hasZ = (raw & 0x80000000) !== 0;
+        hasM = (raw & 0x40000000) !== 0;
+        if (raw & 0x20000000) this.readInt32(); // pula SRID embutido
+      }
+
+      switch (base) {
+        case 1: // Point
+          return { type: "Point", coordinates: this.readXY(hasZ, hasM) };
+
+        case 2: { // LineString
+          const n = this.readUint32(), pts = [];
+          for (let i = 0; i < n; i++) pts.push(this.readXY(hasZ, hasM));
+          return { type: "LineString", coordinates: pts };
+        }
+
+        case 3: { // Polygon
+          const nr = this.readUint32(), rings = [];
+          for (let i = 0; i < nr; i++) {
+            const ring = this.readRing(hasZ, hasM);
+            if (ring.length >= 4) rings.push(ring);
+          }
+          return { type: "Polygon", coordinates: rings };
+        }
+
+        case 4: { // MultiPoint
+          const n = this.readUint32(), pts = [];
+          for (let i = 0; i < n; i++) {
+            if (this.pos + 5 <= this.dv.byteLength) {
+              const b = this.dv.getUint8(this.pos);
+              if (b === 0 || b === 1) {
+                pts.push(this.readGeometry().coordinates);
+                continue;
+              }
+            }
+            pts.push(this.readXY(hasZ, hasM));
+          }
+          return { type: "MultiPoint", coordinates: pts };
+        }
+
+        case 5: { // MultiLineString
+          const n = this.readUint32(), lines = [];
+          for (let i = 0; i < n; i++) lines.push(this.readGeometry().coordinates);
+          return { type: "MultiLineString", coordinates: lines };
+        }
+
+        case 6: { // MultiPolygon
+          const n = this.readUint32(), polys = [];
+          for (let i = 0; i < n; i++) polys.push(this.readGeometry().coordinates);
+          return { type: "MultiPolygon", coordinates: polys };
+        }
+
+        case 7: { // GeometryCollection
+          const n = this.readUint32(), geoms = [];
+          for (let i = 0; i < n; i++) geoms.push(this.readGeometry());
+          return { type: "GeometryCollection", geometries: geoms };
+        }
+
+        default:
+          throw new Error(`WKB tipo ${base} desconhecido`);
+      }
+    }
+  }
+
+  // ── Extração de Geometria de BLOB (GeoPackage / SpatiaLite / WKB) ─
+  function blobToGeometry(blob) {
+    if (!blob || blob.length < 5) return null;
+
+    // 1. GeoPackage Binary Header: magic 'GP' (0x47, 0x50)
+    if (blob[0] === 0x47 && blob[1] === 0x50) {
+      const flags   = blob[3];
+      const isEmpty = (flags >> 4) & 0x01;
+      if (isEmpty) return null;
+      const envType = (flags >> 1) & 0x07;
+      const envBytes = [0, 32, 48, 48, 64][envType] ?? 0;
+      const wkbStart = 8 + envBytes;
+      if (wkbStart >= blob.length) return null;
+      return new WKBReader(blob.slice(wkbStart)).readGeometry();
+    }
+
+    // 2. SpatiaLite Geometry BLOB (inicia com 0x00, byte 38 é WKB)
+    if (blob[0] === 0x00 && blob.length > 43 && (blob[38] === 1 || blob[38] === 0)) {
+      try {
+        return new WKBReader(blob.slice(38)).readGeometry();
+      } catch (_) {}
+    }
+
+    // 3. Raw WKB padrão (inicia com byteOrder: 1 = LE, 0 = BE)
+    if (blob[0] === 0 || blob[0] === 1) {
+      try {
+        return new WKBReader(blob).readGeometry();
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  // ── Parser GeoPackage (.gpkg) via sql.js ────────────────────────
+  const GPKG_MAX_FEATURES = 25000;
+
+  async function parseGeoPackage(arrayBuffer, filename) {
+    showToast("Carregando motor SQLite (sql.js)…", 25000);
+    const SQL = await getSqlJs();
+
+    showToast("Lendo banco GeoPackage…", 25000);
+    const db = new SQL.Database(new Uint8Array(arrayBuffer));
+
+    try {
+      // 1. Localiza tabelas de feições
+      let tables = [];
+      try {
+        const tbRes = db.exec("SELECT table_name FROM gpkg_contents WHERE LOWER(data_type) LIKE '%feature%'");
+        tables = tbRes[0]?.values.map(r => r[0]) ?? [];
+      } catch (_) {}
+
+      if (!tables.length) {
+        try {
+          const gcRes = db.exec("SELECT DISTINCT table_name FROM gpkg_geometry_columns");
+          tables = gcRes[0]?.values.map(r => r[0]) ?? [];
+        } catch (_) {}
+      }
+
+      if (!tables.length) {
+        throw new Error("Nenhuma camada vetorial encontrada no GeoPackage.");
+      }
+
+      const allFeatures = [];
+      let totalSkipped = 0;
+      let usedTransformerName = null;
+
+      for (const table of tables) {
+        if (allFeatures.length >= GPKG_MAX_FEATURES) break;
+
+        // Metadados da geometria
+        let geomCol = "geom", geomSrsId = null;
+        try {
+          const gcR = db.exec("SELECT column_name, srs_id FROM gpkg_geometry_columns WHERE table_name=?", [table]);
+          if (gcR[0]?.values.length) {
+            geomCol   = gcR[0].values[0][0] || "geom";
+            geomSrsId = gcR[0].values[0][1];
+          }
+        } catch (_) {}
+
+        // Busca definição do CRS na tabela gpkg_spatial_ref_sys
+        let wktDef = null;
+        if (geomSrsId != null) {
+          try {
+            const srsR = db.exec("SELECT definition, organization_coordsys_id FROM gpkg_spatial_ref_sys WHERE srs_id=?", [geomSrsId]);
+            if (srsR[0]?.values.length) {
+              wktDef = srsR[0].values[0][0];
+              if (!geomSrsId && srsR[0].values[0][1]) geomSrsId = srsR[0].values[0][1];
+            }
+          } catch (_) {}
+        }
+
+        // Resolve o transformer de projeção
+        const txObj = await resolveTransformer(geomSrsId, wktDef);
+        const tx = txObj?.transform || null;
+        if (txObj?.name) usedTransformerName = txObj.name;
+
+        // Carrega registros da tabela
+        const remaining = GPKG_MAX_FEATURES - allFeatures.length;
+        const rowsR = db.exec(`SELECT * FROM "${table}" LIMIT ${remaining}`);
+        if (!rowsR[0]) continue;
+
+        const cols    = rowsR[0].columns;
+        const geomIdx = cols.indexOf(geomCol);
+        if (geomIdx === -1) continue;
+
+        // Fallback: se não temos transformer mas as coordenadas estão em metros, detecta UTM 24S (Fortaleza)
+        let checkedHeuristic = false;
+        let activeTx = tx;
+
+        for (const row of rowsR[0].values) {
+          const blob = row[geomIdx];
+          if (!blob) { totalSkipped++; continue; }
+
+          let geom;
+          try { geom = blobToGeometry(blob); }
+          catch (e) { totalSkipped++; continue; }
+          if (!geom) { totalSkipped++; continue; }
+
+          // Heurística automática se faltar CRS: coordenadas > 180 em metros
+          if (!checkedHeuristic && !activeTx) {
+            checkedHeuristic = true;
+            const pt = geom.coordinates?.[0] || geom.coordinates;
+            if (Array.isArray(pt) && (Math.abs(pt[0]) > 180 || Math.abs(pt[1]) > 90)) {
+              // Coordenadas projetadas sem CRS declarado -> aplica UTM 24S (Fortaleza)
+              await getProj4();
+              const utm24s = getUtmProj4String(31984);
+              proj4.defs("UTM_AUTO", utm24s);
+              activeTx = proj4("UTM_AUTO", "EPSG:4326");
+              usedTransformerName = "SIRGAS 2000 UTM 24S (auto)";
+            }
+          }
+
+          // Reprojeta para WGS84
+          geom = reprojectGeometry(geom, activeTx);
+
+          // Extrai atributos/propriedades da feição
+          const props = { _table: table };
+          cols.forEach((c, i) => {
+            if (i !== geomIdx && row[i] != null) props[c] = row[i];
+          });
+
+          // Flatten de GeometryCollection para que o Mapbox GL renderize tudo
+          if (geom.type === "GeometryCollection") {
+            (geom.geometries || []).forEach(subGeom => {
+              allFeatures.push({ type: "Feature", geometry: subGeom, properties: { ...props } });
+            });
+          } else {
+            allFeatures.push({ type: "Feature", geometry: geom, properties: props });
+          }
+        }
+      }
+
+      if (usedTransformerName) {
+        showToast(`Reprojetado de ${usedTransformerName} para WGS84`, 4000);
+      }
+      if (!allFeatures.length) {
+        throw new Error("Nenhuma feição válida pôde ser lida deste GeoPackage.");
+      }
+
+      return {
+        geojson: { type: "FeatureCollection", features: allFeatures },
+        name: filename.replace(/\.gpkg$/i, "")
+      };
+
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── Leitura de Shapefiles (.shp, .dbf, .prj) ───────────────────
+  async function parseShapefile(shpFile, dbfFile, prjFile) {
+    if (!window.shapefile) throw new Error("Biblioteca shapefile.js não carregada.");
+    showToast("Lendo arquivo Shapefile…", 15000);
+
+    const shpBuf = await shpFile.arrayBuffer();
+    const dbfBuf = dbfFile ? await dbfFile.arrayBuffer() : undefined;
+    let geojson  = await shapefile.read(shpBuf, dbfBuf);
+
+    let prjText = null;
+    if (prjFile) {
+      try { prjText = await prjFile.text(); } catch (_) {}
+    }
+
+    // Verifica se as coordenadas precisam de reprojeção
+    let sample = null;
+    for (const f of geojson.features || []) {
+      if (f.geometry?.coordinates) {
+        const c = f.geometry.coordinates;
+        sample = typeof c[0] === "number" ? c : (typeof c[0]?.[0] === "number" ? c[0] : c[0]?.[0]);
+        if (sample) break;
+      }
+    }
+
+    let txObj = null;
+    if (prjText) {
+      txObj = await resolveTransformer(null, prjText);
+    } else if (sample && (Math.abs(sample[0]) > 180 || Math.abs(sample[1]) > 90)) {
+      // Coordenadas métricas sem .prj -> aplica UTM 24S (Fortaleza)
+      await getProj4();
+      proj4.defs("UTM_AUTO", getUtmProj4String(31984));
+      txObj = { transform: proj4("UTM_AUTO", "EPSG:4326"), name: "UTM 24S (auto)" };
+    }
+
+    if (txObj?.transform) {
+      showToast(`Reprojetando coordenadas (${txObj.name})…`, 3500);
+      geojson.features = (geojson.features || []).map(f => ({
+        ...f,
+        geometry: reprojectGeometry(f.geometry, txObj.transform)
+      }));
+    } else if (sample && (Math.abs(sample[0]) > 180 || Math.abs(sample[1]) > 90)) {
+      showToast("Aviso: coordenadas métricas detectadas sem arquivo .prj", 4500);
+    }
+
+    return { geojson, name: shpFile.name.replace(/\.shp$/i, "") };
+  }
+
+  // ── Extração de arquivos ZIP ────────────────────────────────────
+  async function parseZipArchive(zipFile) {
+    showToast("Descompactando arquivo ZIP…", 15000);
+    const JSZip = await getJSZip();
+    const zip = await JSZip.loadAsync(await zipFile.arrayBuffer());
+
+    const files = {};
+    for (const [filename, fileObj] of Object.entries(zip.files)) {
+      if (fileObj.dir) continue;
+      const lower = filename.toLowerCase();
+      const ext = lower.split(".").pop();
+      files[ext] = files[ext] || [];
+      files[ext].push({ name: filename, fileObj });
+    }
+
+    // 1. Procura GeoPackage dentro do ZIP
+    if (files.gpkg?.length) {
+      const entry = files.gpkg[0];
+      const buf = await entry.fileObj.async("arraybuffer");
+      return await parseGeoPackage(buf, entry.name);
+    }
+
+    // 2. Procura GeoJSON dentro do ZIP
+    if (files.geojson?.length || files.json?.length) {
+      const entry = (files.geojson || files.json)[0];
+      const text = await entry.fileObj.async("text");
+      return { geojson: JSON.parse(text), name: entry.name };
+    }
+
+    // 3. Procura Shapefile dentro do ZIP (.shp + .dbf + .prj)
+    if (files.shp?.length) {
+      const shpEntry = files.shp[0];
+      const baseName = shpEntry.name.replace(/\.shp$/i, "");
+      const dbfEntry = files.dbf?.find(e => e.name.replace(/\.dbf$/i, "") === baseName) || files.dbf?.[0];
+      const prjEntry = files.prj?.find(e => e.name.replace(/\.prj$/i, "") === baseName) || files.prj?.[0];
+
+      const shpBuf = await shpEntry.fileObj.async("arraybuffer");
+      const dbfBuf = dbfEntry ? await dbfEntry.fileObj.async("arraybuffer") : undefined;
+      let prjText  = prjEntry ? await prjEntry.fileObj.async("text") : null;
+
+      const dummyShpFile = { name: shpEntry.name, arrayBuffer: () => Promise.resolve(shpBuf) };
+      const dummyDbfFile = dbfBuf ? { arrayBuffer: () => Promise.resolve(dbfBuf) } : null;
+      const dummyPrjFile = prjText ? { text: () => Promise.resolve(prjText) } : null;
+
+      return await parseShapefile(dummyShpFile, dummyDbfFile, dummyPrjFile);
+    }
+
+    throw new Error("Nenhum arquivo geográfico (.shp, .gpkg, .geojson) encontrado no ZIP.");
+  }
+
+  // ── Dispatcher de Arquivos ──────────────────────────────────────
+  async function filesToGeoJSON(fileList) {
+    const files = [...fileList];
+    const byExt = {};
+    files.forEach(f => {
+      const ext = f.name.split(".").pop().toLowerCase();
+      byExt[ext] = byExt[ext] || [];
+      byExt[ext].push(f);
+    });
+
+    // 1. Arquivo ZIP
+    if (byExt.zip?.length) {
+      return await parseZipArchive(byExt.zip[0]);
+    }
+
+    // 2. GeoPackage (.gpkg)
+    if (byExt.gpkg?.length) {
+      const gpkgFile = byExt.gpkg[0];
+      return await parseGeoPackage(await gpkgFile.arrayBuffer(), gpkgFile.name);
+    }
+
+    // 3. GeoJSON (.geojson, .json)
+    if (byExt.geojson?.length || byExt.json?.length) {
+      const f = (byExt.geojson || byExt.json)[0];
+      const geojson = JSON.parse(await f.text());
+      return { geojson, name: f.name };
+    }
+
+    // 4. Shapefile (.shp + opcionais .dbf e .prj)
+    if (byExt.shp?.length) {
+      const shpFile = byExt.shp[0];
+      const base = shpFile.name.replace(/\.shp$/i, "");
+      const dbfFile = byExt.dbf?.find(f => f.name.replace(/\.dbf$/i, "") === base) || byExt.dbf?.[0];
+      const prjFile = byExt.prj?.find(f => f.name.replace(/\.prj$/i, "") === base) || byExt.prj?.[0];
+      return await parseShapefile(shpFile, dbfFile, prjFile);
+    }
+
+    throw new Error("Formato não reconhecido. Arraste .shp (+.dbf, .prj), .gpkg, .geojson ou .zip.");
+  }
+
+  // ── Cálculo Seguro de Bounding Box (sem limite de call-stack) ───
+  function calculateSafeBounds(features) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    function visitCoord(pt) {
+      if (!pt || typeof pt[0] !== "number" || typeof pt[1] !== "number") return;
+      const x = pt[0], y = pt[1];
+      if (isNaN(x) || isNaN(y)) return;
+      if (x < -180 || x > 180 || y < -90 || y > 90) return; // descarta coordenadas fora do globo
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+
+    function visitNested(arr) {
+      if (!arr || !Array.isArray(arr)) return;
+      if (typeof arr[0] === "number") {
+        visitCoord(arr);
+      } else {
+        for (let i = 0; i < arr.length; i++) visitNested(arr[i]);
+      }
+    }
+
+    for (const f of features || []) {
+      if (f.geometry?.coordinates) visitNested(f.geometry.coordinates);
+    }
+
+    if (minX === Infinity || maxX === -Infinity) return null;
+    return [[minX, minY], [maxX, maxY]];
+  }
+
+  // ── Adição ao Mapa com Renderização Multi-Tipo e Popups ─────────
+  function addShapeToMap(geojson, filename) {
+    const id    = "shape-" + (++shapeCounter);
+    const color = SHAPE_COLORS[(shapeCounter - 1) % SHAPE_COLORS.length];
+    const name  = filename.replace(/\.[^.]+$/, "");
+    const count = geojson.features?.length ?? 0;
+
+    // Detecta os tipos de geometria presentes em toda a coleção
+    let hasPoly = false, hasLine = false, hasPoint = false;
+    (geojson.features || []).forEach(f => {
+      const t = f.geometry?.type;
+      if (t === "Polygon" || t === "MultiPolygon") hasPoly = true;
+      else if (t === "LineString" || t === "MultiLineString") hasLine = true;
+      else if (t === "Point" || t === "MultiPoint") hasPoint = true;
+    });
+
+    // Se não detectou tipo específico, habilita tudo por garantia
+    if (!hasPoly && !hasLine && !hasPoint) {
+      hasPoly = hasLine = hasPoint = true;
+    }
+
+    // Adiciona fonte GeoJSON
+    map.addSource(id, { type: "geojson", data: geojson });
+    const layerIds = [];
+
+    // 1. Camada de Polígonos (Fill + Outline)
+    if (hasPoly) {
+      const fillId = id + "-fill";
+      map.addLayer({
+        id: fillId,
+        type: "fill",
+        source: id,
+        filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+        paint: {
+          "fill-color": color,
+          "fill-opacity": 0.45
+        }
+      });
+      layerIds.push(fillId);
+
+      const outlineId = id + "-poly-outline";
+      map.addLayer({
+        id: outlineId,
+        type: "line",
+        source: id,
+        filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+        paint: {
+          "line-color": color,
+          "line-width": 1.5,
+          "line-opacity": 0.95
+        }
+      });
+      layerIds.push(outlineId);
+    }
+
+    // 2. Camada de Linhas
+    if (hasLine) {
+      const lineId = id + "-line";
+      map.addLayer({
+        id: lineId,
+        type: "line",
+        source: id,
+        filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]],
+        paint: {
+          "line-color": color,
+          "line-width": 2.5,
+          "line-opacity": 0.95
+        }
+      });
+      layerIds.push(lineId);
+    }
+
+    // 3. Camada de Pontos
+    if (hasPoint) {
+      const ptId = id + "-circle";
+      map.addLayer({
+        id: ptId,
+        type: "circle",
+        source: id,
+        filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+        paint: {
+          "circle-color": color,
+          "circle-radius": 6,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5
+        }
+      });
+      layerIds.push(ptId);
+    }
+
+    // Popup interativo ao clicar nas feições
+    layerIds.forEach(lid => {
+      map.on("click", lid, e => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+
+        const props = feature.properties || {};
+        let rowsHtml = "";
+        for (const [k, v] of Object.entries(props)) {
+          if (k.startsWith("_")) continue;
+          rowsHtml += `<tr><td style="color:var(--muted);padding:2px 6px 2px 0;font-size:11px;">${k}</td><td style="font-weight:600;font-size:11px;word-break:break-all;">${v}</td></tr>`;
+        }
+
+        const html = `
+          <div style="font-family:'Segoe UI',sans-serif;max-height:220px;overflow-y:auto;padding-right:4px;">
+            <div style="font-weight:700;color:${color};font-size:13px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">${name}</div>
+            ${rowsHtml ? `<table style="width:100%;border-collapse:collapse;">${rowsHtml}</table>` : "<div style=\"font-size:11px;color:var(--muted);\">Sem atributos adicionais</div>"}
+          </div>
+        `;
+
+        new mapboxgl.Popup({ closeButton: true, maxWidth: "300px" })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      map.on("mouseenter", lid, () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", lid, () => { map.getCanvas().style.cursor = ""; });
+    });
+
+    // Zoom suave e automático para a extensão do shape
+    const bounds = calculateSafeBounds(geojson.features);
+    if (bounds) {
+      map.fitBounds(bounds, { padding: 60, maxZoom: 16.5, duration: 850 });
+    }
+
+    // ── Detecta colunas numéricas e calcula min/max ───────────────
+    const numericCols = {};
+    if (count > 0) {
+      // Coleta TODAS as chaves de propriedades de TODOS os features
+      const allKeysSet = new Set();
+      for (const f of geojson.features) {
+        if (f.properties) {
+          for (const k of Object.keys(f.properties)) allKeysSet.add(k);
+        }
+      }
+
+      // Função auxiliar p/ converter valores numéricos (aceita int, float, formato BR)
+      function toNum(raw) {
+        if (raw == null) return NaN;
+        if (typeof raw === "number") return isFinite(raw) ? raw : NaN;
+        if (typeof raw === "boolean") return NaN;
+        let s = String(raw).trim();
+        if (s === "" || s === "null" || s === "NaN" || s === "N/A" || s === "-") return NaN;
+        // Formato BR milhar+decimal: "1.234,56" → "1234.56"
+        if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) {
+          s = s.replace(/\./g, "").replace(",", ".");
+        }
+        // Vírgula decimal simples (sem milhar): "3,14" → "3.14"
+        else if (/^-?\d+,\d+$/.test(s)) {
+          s = s.replace(",", ".");
+        }
+        const v = Number(s);
+        return isFinite(v) ? v : NaN;
+      }
+
+      for (const key of allKeysSet) {
+        if (key === "_table") continue;  // só ignora chave interna do parser
+        let min = Infinity, max = -Infinity, numCount = 0, totalCount = 0;
+        for (const f of geojson.features) {
+          totalCount++;
+          const v = toNum(f.properties?.[key]);
+          if (isNaN(v)) continue;
+          numCount++;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        // Aceita se pelo menos 1 feature tiver valor numérico
+        if (numCount >= 1) {
+          // Se todos iguais, cria micro-range para evitar divisão por zero
+          if (min === max) { min = min - 1; max = max + 1; }
+          numericCols[key] = { min, max, mid: (min + max) / 2 };
+        }
+        console.log(`[Shape Cols] "${key}": ${numCount}/${totalCount} numéricos | min=${min} max=${max} | ${numCount >= 1 ? "aceita" : "rejeitada"}`);
+      }
+      console.log(`[Shape Cols] Total colunas numéricas detectadas: ${Object.keys(numericCols).length}`, numericCols);
+    }
+
+    // Registra shape carregado
+    loadedShapes[id] = { name, color, layerIds, sourceId: id, visible: true, numericCols, geojson };
+
+    // Determina badge para a sidebar
+    const typeLabel = [hasPoly ? "Polígono" : "", hasLine ? "Linha" : "", hasPoint ? "Ponto" : ""].filter(Boolean).join(" / ") || "Camada";
+    renderShapeItem(id, name, color, count, typeLabel);
+
+    // Abre a aba de shapes para visualização imediata dos controles
+    if (typeof openTab === "function") openTab("shapes");
+
+    showToast(`<strong>${name}</strong> carregado (${count} feições)`);
+    return id;
+  }
+
+  // ── Renderiza Item do Shape na Sidebar ──────────────────────────
+  function renderShapeItem(id, name, color, count, typeLabel) {
+    const list = document.getElementById("shapes-list");
+    const shape = loadedShapes[id];
+    const numCols = shape?.numericCols || {};
+    const colKeys = Object.keys(numCols);
+    const hasNumeric = colKeys.length > 0;
+
+    const el = document.createElement("div");
+    el.className = "shape-item";
+    el.id = "shape-item-" + id;
+    el.style.flexWrap = "wrap";
+
+    // ── Build column <select> options ───────────────────────
+    let colOptions = `<option value="">— Cor sólida —</option>`;
+    for (const col of colKeys) {
+      const s = numCols[col];
+      const fMin = formatNum(s.min), fMax = formatNum(s.max);
+      colOptions += `<option value="${col}">${col} (${fMin} a ${fMax})</option>`;
+    }
+
+    // ── Build palette <select> options ──────────────────────
+    let palOptions = "";
+    for (const [k, p] of Object.entries(PALETTES)) {
+      palOptions += `<option value="${k}">${p.label}</option>`;
+    }
+
+    el.innerHTML = `
+      <div class="shape-item-dot" style="background:${color}"></div>
+      <div class="shape-item-info">
+        <div class="shape-item-name" title="${name}">${name}</div>
+        <div class="shape-item-meta">${count} feições · ${typeLabel}</div>
+      </div>
+      <div class="shape-item-actions">
+        <button class="shape-btn" data-action="toggle" data-id="${id}" title="Mostrar ou ocultar">
+          <svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+        <button class="shape-btn danger" data-action="remove" data-id="${id}" title="Remover">✕</button>
+      </div>
+      ${hasNumeric ? `
+      <div class="shape-extra">
+        <div class="shape-ctrl-row">
+          <span class="shape-ctrl-label">Gradiente</span>
+          <select class="shape-select" data-role="col-select">${colOptions}</select>
+        </div>
+        <div class="shape-ctrl-row">
+          <span class="shape-ctrl-label">Paleta</span>
+          <select class="shape-select" data-role="pal-select">${palOptions}</select>
+        </div>
+        <div data-role="legend-wrap" style="display:none">
+          <div class="shape-legend-bar" data-role="legend-bar"></div>
+          <div class="shape-legend-labels">
+            <span data-role="leg-min"></span>
+            <span data-role="leg-mid"></span>
+            <span data-role="leg-max"></span>
+          </div>
+        </div>
+        <div class="shape-ctrl-row" style="margin-top:4px">
+          <span class="shape-ctrl-label">Opacidade</span>
+          <div class="shape-opacity-wrap">
+            <input type="range" class="shape-opacity-slider" data-role="opacity" min="10" max="100" value="45" step="5">
+            <span class="shape-opacity-val" data-role="opacity-val">45%</span>
+          </div>
+        </div>
+      </div>` : `
+      <div class="shape-extra">
+        <div class="shape-ctrl-row" style="margin-top:2px">
+          <span class="shape-ctrl-label">Opacidade</span>
+          <div class="shape-opacity-wrap">
+            <input type="range" class="shape-opacity-slider" data-role="opacity" min="10" max="100" value="45" step="5">
+            <span class="shape-opacity-val" data-role="opacity-val">45%</span>
+          </div>
+        </div>
+      </div>`}
+    `;
+    list.appendChild(el);
+
+    // ── Helper: format numbers ──────────────────────────────
+    function formatNum(n) {
+      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
+      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
+      return Number.isInteger(n) ? String(n) : n.toFixed(2);
+    }
+
+    // ── Opacity slider ─────────────────────────────────────
+    const opSlider = el.querySelector('[data-role="opacity"]');
+    const opVal    = el.querySelector('[data-role="opacity-val"]');
+    if (opSlider) {
+      opSlider.addEventListener("input", () => {
+        const v = Number(opSlider.value) / 100;
+        opVal.textContent = opSlider.value + "%";
+        const s = loadedShapes[id];
+        if (!s) return;
+        s.layerIds.forEach(lid => {
+          if (!map.getLayer(lid)) return;
+          const layer = map.getLayer(lid);
+          if (layer.type === "fill")   map.setPaintProperty(lid, "fill-opacity", v);
+          if (layer.type === "line")   map.setPaintProperty(lid, "line-opacity", v);
+          if (layer.type === "circle") map.setPaintProperty(lid, "circle-opacity", v);
+        });
+      });
+    }
+
+    // ── Gradient controls ──────────────────────────────────
+    const colSelect = el.querySelector('[data-role="col-select"]');
+    const palSelect = el.querySelector('[data-role="pal-select"]');
+    const legendWrap = el.querySelector('[data-role="legend-wrap"]');
+
+    function applyGradient() {
+      const s = loadedShapes[id];
+      if (!s) return;
+      const col = colSelect?.value || "";
+      const palKey = palSelect?.value || "calor";
+      const pal = PALETTES[palKey];
+      const opacity = Number(opSlider?.value || 45) / 100;
+
+      if (!col || !numCols[col]) {
+        // Retorna à cor sólida
+        if (legendWrap) legendWrap.style.display = "none";
+        s.layerIds.forEach(lid => {
+          if (!map.getLayer(lid)) return;
+          const layer = map.getLayer(lid);
+          if (layer.type === "fill") {
+            map.setPaintProperty(lid, "fill-color", color);
+          } else if (layer.type === "line") {
+            map.setPaintProperty(lid, "line-color", color);
+          } else if (layer.type === "circle") {
+            map.setPaintProperty(lid, "circle-color", color);
+          }
+        });
+        // Restaura dot de cor sólida
+        const dot = el.querySelector(".shape-item-dot");
+        if (dot) dot.style.background = color;
+        return;
+      }
+
+      const stats = numCols[col];
+      const stops = pal.stops;
+      const gradCSS = `linear-gradient(to right, ${stops.join(", ")})`;
+
+      // Atualiza legenda
+      if (legendWrap) {
+        legendWrap.style.display = "block";
+        el.querySelector('[data-role="legend-bar"]').style.background = gradCSS;
+        el.querySelector('[data-role="leg-min"]').textContent = formatNum(stats.min);
+        el.querySelector('[data-role="leg-mid"]').textContent = formatNum(stats.mid);
+        el.querySelector('[data-role="leg-max"]').textContent = formatNum(stats.max);
+      }
+
+      // Atualiza dot com gradiente
+      const dot = el.querySelector(".shape-item-dot");
+      if (dot) dot.style.background = gradCSS;
+
+      // Expressão Mapbox GL interpolate
+      const interpExpr = [
+        "interpolate", ["linear"],
+        ["to-number", ["get", col], stats.min],
+        stats.min, stops[0],
+        stats.mid, stops[1],
+        stats.max, stops[2]
+      ];
+
+      s.layerIds.forEach(lid => {
+        if (!map.getLayer(lid)) return;
+        const layer = map.getLayer(lid);
+        if (layer.type === "fill") {
+          map.setPaintProperty(lid, "fill-color", interpExpr);
+        } else if (layer.type === "line") {
+          map.setPaintProperty(lid, "line-color", interpExpr);
+        } else if (layer.type === "circle") {
+          map.setPaintProperty(lid, "circle-color", interpExpr);
+        }
+      });
+    }
+
+    if (colSelect) colSelect.addEventListener("change", applyGradient);
+    if (palSelect) palSelect.addEventListener("change", applyGradient);
+
+    // ── Toggle visibility ──────────────────────────────────
+    el.querySelector('[data-action="toggle"]').addEventListener("click", () => {
+      const shape = loadedShapes[id];
+      if (!shape) return;
+      shape.visible = !shape.visible;
+      const vis = shape.visible ? "visible" : "none";
+      shape.layerIds.forEach(lid => {
+        if (map.getLayer(lid)) map.setLayoutProperty(lid, "visibility", vis);
+      });
+      const tBtn = el.querySelector('[data-action="toggle"]');
+      if (tBtn) tBtn.style.opacity = shape.visible ? "1" : "0.35";
+    });
+
+    // ── Remove shape ───────────────────────────────────────
+    el.querySelector('[data-action="remove"]').addEventListener("click", () => {
+      const shape = loadedShapes[id];
+      if (!shape) return;
+      shape.layerIds.forEach(lid => {
+        if (map.getLayer(lid)) map.removeLayer(lid);
+      });
+      if (map.getSource(shape.sourceId)) map.removeSource(shape.sourceId);
+      delete loadedShapes[id];
+      el.remove();
+      showToast(`Camada "${name}" removida`);
+    });
+  }
+
+  // ── Processamento de Arquivos Recebidos ─────────────────────────
+  async function processDrop(files) {
+    if (!files || !files.length) return;
+    try {
+      showToast("Processando dados geográficos…", 15000);
+      const { geojson, name } = await filesToGeoJSON(files);
+      addShapeToMap(geojson, name);
+    } catch (err) {
+      showToast(`Erro ao processar: ${err.message}`, 6000);
+      console.error("[geo-import]", err);
+    }
+  }
+
+  // ── Drag & Drop Global e File Picker ────────────────────────────
+  let _dragDepth = 0;
+  const dropOverlay = document.getElementById("drop-overlay");
+  const dropHint    = document.getElementById("drop-hint");
+  const fileInput   = document.getElementById("file-input");
+
+  document.addEventListener("dragenter", e => {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    _dragDepth++;
+    dropOverlay.classList.add("visible");
+  });
+
+  document.addEventListener("dragleave", () => {
+    _dragDepth--;
+    if (_dragDepth <= 0) { _dragDepth = 0; dropOverlay.classList.remove("visible"); }
+  });
+
+  document.addEventListener("dragover", e => e.preventDefault());
+
+  document.addEventListener("drop", async e => {
+    e.preventDefault();
+    _dragDepth = 0;
+    dropOverlay.classList.remove("visible");
+    dropHint.classList.remove("drag-over");
+    await processDrop(e.dataTransfer.files);
+  });
+
+  // Drop na sidebar
+  dropHint.addEventListener("dragover", e => { e.preventDefault(); dropHint.classList.add("drag-over"); });
+  dropHint.addEventListener("dragleave", () => dropHint.classList.remove("drag-over"));
+  dropHint.addEventListener("drop", async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropHint.classList.remove("drag-over");
+    _dragDepth = 0;
+    dropOverlay.classList.remove("visible");
+    await processDrop(e.dataTransfer.files);
+  });
+
+  // Clique para selecionar arquivos via caixa de diálogo
+  dropHint.addEventListener("click", () => {
+    if (fileInput) fileInput.click();
+  });
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async e => {
+      if (e.target.files?.length) {
+        await processDrop(e.target.files);
+        fileInput.value = ""; // reseta para permitir selecionar novamente
+      }
+    });
+  }
+
+</script>
+</body>
+</html>
