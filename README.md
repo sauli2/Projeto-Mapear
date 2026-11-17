@@ -65,15 +65,3 @@ Em seguida, abra: [http://localhost:8080](http://localhost:8080)
 ```bash
 npx serve .
 ```
-
----
-
-## 🔑 Configuração do Mapbox Token
-
-O token público de acesso está centralizado em `js/config.js`:
-
-```javascript
-const MAPBOX_TOKEN = "pk.eyJ1Ijoic2F1bG9maHkiLCJhIjoiY213MmFwcWlqMDE4NjM1cHhrdXk0enk4dSJ9.d0h3fbdYBaUdqbUjUCDvag";
-```
-
-Para produção ou GitHub Pages, lembre-se de configurar a restrição de domínio (*URL Restrictions*) no painel do [Mapbox](https://account.mapbox.com/access-tokens/) para o domínio correspondente.
